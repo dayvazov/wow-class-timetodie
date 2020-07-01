@@ -1,0 +1,10 @@
+## Interface: 11200
+## Title: Time To Die
+## Notes: Show the time to die in frame, also gather stats
+
+#@no-lib-strip@
+Libs\libs.xml
+#@end-no-lib-strip@
+
+TimeToDie.lua
+TimeToDie.xml
