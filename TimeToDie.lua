@@ -23,6 +23,7 @@ function TimeToDie:OnInitialize()
     self.infoFrame:Hide()
     self.infoFrame:SetWidth(200)
     self.infoFrame:SetHeight(200)
+    self.infoFrame:SetLayout("List")
 
     LibStub("AceConfig-3.0"):RegisterOptionsTable(self.addonName, options, {"timetodie", "ttd"})
 
@@ -31,10 +32,8 @@ function TimeToDie:OnInitialize()
 end
 
 function TimeToDie:OnEnable()
-    self:Print("Hello World!")
+    self:Print("You will know when it is time to die!")
     self:RegisterEvent("UNIT_HEALTH")
-    self.infoFrame:Show()
-    self.infoFrame:SetLayout("List")
 end
 
 function TimeToDie:OnDisable()
@@ -45,6 +44,7 @@ function TimeToDie:ChatCommand(input)
     if not input or input:trim() == "" then
         InterfaceOptionsFrame_OpenToCategory(self.optionsFrame)
     else
+        self.infoFrame:Show()
         LibStub("AceConfigCmd-3.0"):HandleCommand(self.commandName, self.addonName, input)
     end
 end
@@ -78,8 +78,6 @@ function SecondsToClock(seconds)
   end
 
 function TimeToDie:UpdateUnit(unit)
-    self:Print("Trying to Update Unit")
-    
     if not unit then
         return
     end
