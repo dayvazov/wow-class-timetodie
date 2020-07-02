@@ -16,10 +16,13 @@ function TimeToDie:OnInitialize()
     TimeToDie.commandName = "ttd"
     TimeToDie.commandNameLong = "timetodie"
     TimeToDie.optionsFrame = LibStub("AceConfigDialog-3.0"):AddToBlizOptions(self.addonName, self.addonName)
+    TimeToDie.previousUnits = { }
     TimeToDie.units = { }
 
     self.infoFrame = AceGUI:Create("Frame")
     self.infoFrame:Hide()
+    self.infoFrame:SetWidth(200)
+    self.infoFrame:SetHeight(200)
 
     LibStub("AceConfig-3.0"):RegisterOptionsTable(self.addonName, options, {"timetodie", "ttd"})
 
@@ -32,13 +35,6 @@ function TimeToDie:OnEnable()
     self:RegisterEvent("UNIT_HEALTH")
     self.infoFrame:Show()
     self.infoFrame:SetLayout("List")
-    
-    local label = AceGUI:Create("Label")
-    label:SetText("Player Health: N/A")
-    local label = AceGUI:Create("Label")
-    label:SetText("Player Health: N/A")
-
-    self.infoFrame:AddChild(label)
 end
 
 function TimeToDie:OnDisable()
@@ -54,14 +50,32 @@ function TimeToDie:ChatCommand(input)
 end
 
 function TimeToDie:UNIT_HEALTH(event, unitTarget)
-    self:Print(event, unitTarget)
     self:UpdateUnit(unitTarget)
-    -- self:Print(string.format("Health Changed %s", name))
 end
 
-function TimeToDie:PLAYER()
-    self:Print("I'm the player!")
+function TimeToDie:CreateLabel()
 end
+
+function TimeToDie:UpdateLabel(label, unit)
+    if not label or not unit then
+        return
+    end
+
+    label:SetText(string.format("%s TTD: %s", unit.name, SecondsToClock(unit.time_left)))
+end
+
+function SecondsToClock(seconds)
+    local seconds = tonumber(seconds)
+  
+    -- if seconds <= 0 then
+    --   return "00:00:00";
+    -- else
+      hours = string.format("%02.f", math.floor(seconds/3600));
+      mins = string.format("%02.f", math.floor(seconds/60 - (hours*60)));
+      secs = string.format("%02.f", math.floor(seconds - hours*3600 - mins *60));
+      return hours..":"..mins..":"..secs
+    -- end
+  end
 
 function TimeToDie:UpdateUnit(unit)
     self:Print("Trying to Update Unit")
@@ -69,30 +83,55 @@ function TimeToDie:UpdateUnit(unit)
     if not unit then
         return
     end
-    
-    self:Print("Updating Unit")
-    
+
+    local time = GetTime() 
     local guid = UnitGUID(unit)
-    local unit = {
-        name = UnitName(unit),
-        level = UnitLevel(unit),
-        health = UnitHealth(unit),
-        health_max = UnitHealthMax(unit),
-        armor = UnitArmor(unit),
-        guid = UnitGUID(unit)
-    }
 
-    self:PrintUnit(unit.guid)
-    if self.units[guid] ~= nil then
-        self.units[guid] = unit
+    table.insert(self.previousUnits, 0, self:Copy(self.units))
 
-        self:Print("Existing unit")
-    else
-        self.units[guid] = unit
-        self:Print("New unit")
+    if self.units[guid] == nil then
+        self.units[guid] = {}
+        self.units[guid].label = AceGUI:Create("Label")
+        self.infoFrame:AddChild(self.units[guid].label)
+    end
+
+    self.units[guid].name = UnitName(unit)
+    self.units[guid].level = UnitLevel(unit)
+    self.units[guid].health = UnitHealth(unit)
+    self.units[guid].health_max = UnitHealthMax(unit)
+    self.units[guid].armor = UnitArmor(unit)
+    self.units[guid].guid = UnitGUID(unit)
+    self.units[guid].time = GetTime()
+
+    if self.previousUnits[0][guid] then
+        dt = self.units[guid].time - self.previousUnits[0][guid].time
+        dh = self.previousUnits[0][guid].health - self.units[guid].health 
+
+        self.units[guid].time_left = self.units[guid].health * (dt/dh)
+        self:UpdateLabel(self.units[guid].label, self.units[guid])
+    end
+end
+
+function TimeToDie:Copy(units)
+    if not units then
+        return nil
+    end
+
+    local units_copy = {}
+
+    for k, v in pairs(units) do
+        local unit = {}
         
-        self:Print("But update time to death")
-    end 
+        for unit_k, unit_v in pairs(v) do
+            if unit_k ~= "label" then
+                unit[unit_k] = unit_v
+            end
+        end
+
+        units_copy[k] = unit
+    end
+
+    return units_copy
 end
 
 function TimeToDie:PrintUnit(guid)
