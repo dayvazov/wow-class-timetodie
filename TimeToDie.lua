@@ -85,11 +85,19 @@ function TimeToDie:UpdateUnit(unit)
     local time = GetTime() 
     local guid = UnitGUID(unit)
 
-    table.insert(self.previousUnits, 0, self:Copy(self.units))
+    if not guid then
+        return
+    end
+
+    if self.units ~= { } then
+        table.insert(self.previousUnits, self:Copy(self.units))
+    end
 
     if self.units[guid] == nil then
-        self.units[guid] = {}
-        self.units[guid].label = AceGUI:Create("Label")
+        self.units[guid] = { 
+            label = AceGUI:Create("Label")
+        }
+        
         self.infoFrame:AddChild(self.units[guid].label)
     end
 
@@ -101,10 +109,10 @@ function TimeToDie:UpdateUnit(unit)
     self.units[guid].guid = UnitGUID(unit)
     self.units[guid].time = GetTime()
 
-    if self.previousUnits[0][guid] then
-        dt = self.units[guid].time - self.previousUnits[0][guid].time
-        dh = self.previousUnits[0][guid].health - self.units[guid].health 
-
+    if self.previousUnits[#(self.previousUnits)][guid] then
+        dt = self.units[guid].time - self.previousUnits[#(self.previousUnits)][guid].time
+        dh = self.previousUnits[#(self.previousUnits)][guid].health - self.units[guid].health
+        
         self.units[guid].time_left = self.units[guid].health * (dt/dh)
         self:UpdateLabel(self.units[guid].label, self.units[guid])
     end
