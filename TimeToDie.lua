@@ -11,7 +11,7 @@ local options = {
             name = " Is Time To Die Visible",
             desc = "Toggle visibility of the main time to death",
             get = "GetVisible",
-            set = "SetVisible",
+            set = "SetVisible"
         },
         interval = {
             type = "input",
@@ -20,11 +20,21 @@ local options = {
             usage = "<update interval>",
             get = "GetUpdateInterval",
             set = "SetUpdateInterval"
-        },
-    },
+        }
+    }
 }
 
 -- speed optimizations (mostly so update functions are faster)
+
+function SecondsToClock(seconds)
+    local seconds = tonumber(seconds)
+
+    hours = string.format("%02.f", floor(seconds / 3600));
+    mins = string.format("%02.f", floor(seconds / 60 - (hours * 60)));
+    secs = string.format("%02.f", floor(seconds - hours * 3600 - mins * 60));
+
+    return hours .. ":" .. mins .. ":" .. secs
+end
 
 local _G = getfenv(0);
 local abs = _G.abs;
@@ -39,22 +49,36 @@ function TimeToDie:OnInitialize()
     TimeToDie.commandName = "ttd"
     TimeToDie.commandNameLong = "timetodie"
     TimeToDie.optionsFrame = LibStub("AceConfigDialog-3.0"):AddToBlizOptions(self.addonName, self.addonName)
-    TimeToDie.previousUnits = { }
-    TimeToDie.units = { }
+    TimeToDie.previousUnits = {}
+    TimeToDie.units = {}
     TimeToDie.isVisible = false
     TimeToDie.timerUpdateInterval = 0.5
     TimeToDie.timerCount = 0
     TimeToDie.isInCombat = false
 
-    self.infoFrame = AceGUI:Create("Window")
-    self.infoFrame:Hide()
-    self.infoFrame:SetWidth(400)
-    self.infoFrame:SetHeight(200)
-    self.infoFrame:SetLayout("List")
-    self.infoFrame:SetAutoAdjustHeight(true)
-    self.infoFrame.frame:SetMinResize(100, 100)
+    local info = AceGUI:Create("Window")
+    info:Hide()
+    info:SetWidth(400)
+    info:SetHeight(200)
+    info:SetLayout("Fill")
+    info:SetAutoAdjustHeight(true)
+    info.frame:SetMinResize(100, 100)
 
-    LibStub("AceConfig-3.0"):RegisterOptionsTable(self.addonName, options, {"timetodie", "ttd"})
+    local scroll = AceGUI:Create("ScrollFrame")
+    scroll:SetLayout("Flow")
+    info:AddChild(scroll)
+
+    local text = AceGUI:Create("Label")
+    text:SetWidth(300)
+    scroll:AddChild(text)
+
+    self.infoFrame = info 
+    self.textFrame = text
+
+    LibStub("AceConfig-3.0"):RegisterOptionsTable(self.addonName, options, {
+        "timetodie",
+        "ttd"
+    })
 
     self:RegisterChatCommand(self.commandNameLong, "ChatCommand")
     self:RegisterChatCommand(self.commandName, "ChatCommand")
@@ -67,7 +91,7 @@ function TimeToDie:OnEnable()
     self:RegisterEvent("PLAYER_REGEN_DISABLED")
     self:RegisterEvent("PLAYER_REGEN_ENABLED")
     self:EnableUpdateLoop()
-    
+
 end
 
 function TimeToDie:UNIT_HEALTH(event, unitTarget)
@@ -78,11 +102,13 @@ function TimeToDie:PLAYER_REGEN_DISABLED()
     -- We've entered combat, so lets clear the log.
     self:Print("Entering combat, tracking time to die.")
     self.isInCombat = true
+    self.units = { }
+    self.previousUnits = { }
 end
 
 function TimeToDie:PLAYER_REGEN_ENABLED()
     -- We've exited combat, lets capture actual times on all our entries.
-    
+
     self:Print("Exiting combat, actuals being recorded.")
     self:PrintUnits()
 
@@ -90,8 +116,8 @@ function TimeToDie:PLAYER_REGEN_ENABLED()
 end
 
 function TimeToDie:EnableUpdateLoop(elapsed)
-    self.infoFrame.frame:SetScript("OnUpdate", function (self, elapsed)
-        TimeToDie.timerCount = TimeToDie.timerCount + elapsed 
+    self.infoFrame.frame:SetScript("OnUpdate", function(self, elapsed)
+        TimeToDie.timerCount = TimeToDie.timerCount + elapsed
 
         -- if we're not in combat and the update time has not elapsed, don't update
         if not TimeToDie.isInCombat or TimeToDie.timerCount < TimeToDie.timerUpdateInterval then
@@ -105,16 +131,22 @@ function TimeToDie:EnableUpdateLoop(elapsed)
 end
 
 function TimeToDie:UpdateTimers()
+    local text = ""
+
     for _, unit in pairs(self.units) do
         unit.timeLeft = unit.timeLeft - self.timerCount
-        
+
         if unit.timeLeft < 0 then
             unit.timeLeft = 0
-            unit.timeActual = GetServerTime() - unit.timeStart
         end
-
-        self:UpdateLabel(unit.label, unit)
+         
+        text = 
+            text .. 
+            string.format("%s - %s", SecondsToClock(unit.timeLeft), unit.name) ..
+            string.format(" (%s)\n", SecondsToClock(unit.time - unit.timeStart))
     end
+
+    self.textFrame:SetText(text)
 end
 
 function TimeToDie:OnDisable()
@@ -157,56 +189,26 @@ function TimeToDie:SetUpdateInterval(info, value)
     end
 end
 
-function TimeToDie:UpdateLabel(label, unit)
-    -- TODO: The label should be a global target, since we can't DELETE frames.
-    -- TODO: Text formatting is apparently what we're going to do here.
-    if not label or not unit then
-        return
-    end
-
-    local text = string.format("%s - %s", SecondsToClock(unit.timeLeft), unit.name)
-
-    if unit.timeActual then
-        text = text .. string.format(" (%s)", SecondsToClock(unit.timeActual))
-    end
-
-    label:SetText(text)
-end
-
-function SecondsToClock(seconds)
-    local seconds = tonumber(seconds)
-  
-    hours = string.format("%02.f", floor(seconds/3600));
-    mins = string.format("%02.f", floor(seconds/60 - (hours*60)));
-    secs = string.format("%02.f", floor(seconds - hours*3600 - mins *60));
-
-    return hours..":"..mins..":"..secs
-  end
-
 function TimeToDie:UpdateUnit(unit)
     if not unit then
         return
     end
 
-    local time = GetTime() 
+    local time = GetTime()
     local guid = UnitGUID(unit)
 
     if not guid then
         return
     end
 
-    if self.units ~= { } then
+    if self.units ~= {} then
         table.insert(self.previousUnits, self:Copy(self.units))
     end
 
     if self.units[guid] == nil then
-        self.units[guid] = { 
-            label = AceGUI:Create("Label"),
-            timeStart = GetServerTime(),
+        self.units[guid] = {
+            timeStart = GetServerTime()
         }
-
-        self.units[guid].label:SetWidth(300)
-        self.infoFrame:AddChild(self.units[guid].label)
     end
 
     self:UpdateUnitInstance(self.units[guid], unit)
@@ -222,20 +224,16 @@ function TimeToDie:UpdateUnitInstance(instance, unit)
     instance.guid = UnitGUID(unit)
     instance.time = GetServerTime()
     instance.timeLeft = 5 * 60
-
-    if instance.health == 0 then
-        instance.timeActual = GetServerTime() - instance.time
-    end
 end
 
 function TimeToDie:UpdateTimeLeft(unit, previousUnit)
     if not previousUnit then
-        return 
+        return
     end
 
     local dt = unit.time - previousUnit.time
     local dh = previousUnit.health - unit.health
-    local timeLeft = unit.health * (dt/dh)
+    local timeLeft = unit.health * (dt / dh)
 
     if abs(unit.timeLeft - timeLeft) > self.timerUpdateInterval then
         unit.timeLeft = timeLeft
@@ -251,7 +249,7 @@ function TimeToDie:Copy(units)
 
     for k, v in pairs(units) do
         local unit = {}
-        
+
         for unit_k, unit_v in pairs(v) do
             if unit_k ~= "label" then
                 unit[unit_k] = unit_v
@@ -269,7 +267,6 @@ function TimeToDie:PrintUnits()
         self:PrintUnit(k)
     end
 end
-
 
 function TimeToDie:PrintUnit(guid)
     if self.units[guid] == nil then
