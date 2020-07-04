@@ -62,33 +62,12 @@ end
 
 function TimeToDie:OnEnable()
     self:Print("You will know when it is time to die!")
+
     self:RegisterEvent("UNIT_HEALTH")
     self:RegisterEvent("PLAYER_REGEN_DISABLED")
     self:RegisterEvent("PLAYER_REGEN_ENABLED")
     self:EnableUpdateLoop()
     
-end
-
-function TimeToDie:EnableUpdateLoop(elapsed)
-    self.infoFrame.frame:SetScript("OnUpdate", function (self, elapsed)
-        TimeToDie.timerCount = TimeToDie.timerCount + elapsed 
-
-        -- if we're not in combat and the update time has not elapsed, don't update
-        if not TimeToDie.isInCombat or TimeToDie.timerCount < TimeToDie.timerUpdateInterval then
-            return
-        end
-
-        TimeToDie:UpdateTimers()
-        TimeToDie.timerCount = 0
-    end)
-end
-
-function TimeToDie:UpdateTimers()
-    for _, unit in pairs(self.units) do
-        unit.timeLeft = unit.timeLeft - self.timerCount
-
-        self:UpdateLabel(unit.label, unit)
-    end
 end
 
 function TimeToDie:UNIT_HEALTH(event, unitTarget)
@@ -103,8 +82,39 @@ end
 
 function TimeToDie:PLAYER_REGEN_ENABLED()
     -- We've exited combat, lets capture actual times on all our entries.
-    self.Print("Exiting combat, actuals being recorded.")
+    
+    self:Print("Exiting combat, actuals being recorded.")
+    self:PrintUnits()
+
     self.isInCombat = false
+end
+
+function TimeToDie:EnableUpdateLoop(elapsed)
+    self.infoFrame.frame:SetScript("OnUpdate", function (self, elapsed)
+        TimeToDie.timerCount = TimeToDie.timerCount + elapsed 
+
+        -- if we're not in combat and the update time has not elapsed, don't update
+        if not TimeToDie.isInCombat or TimeToDie.timerCount < TimeToDie.timerUpdateInterval then
+            return
+        end
+
+        TimeToDie:UpdateTimers()
+
+        TimeToDie.timerCount = 0
+    end)
+end
+
+function TimeToDie:UpdateTimers()
+    for _, unit in pairs(self.units) do
+        unit.timeLeft = unit.timeLeft - self.timerCount
+        
+        if unit.timeLeft < 0 then
+            unit.timeLeft = 0
+            unit.timeActual = GetServerTime() - unit.timeStart
+        end
+
+        self:UpdateLabel(unit.label, unit)
+    end
 end
 
 function TimeToDie:OnDisable()
@@ -148,11 +158,19 @@ function TimeToDie:SetUpdateInterval(info, value)
 end
 
 function TimeToDie:UpdateLabel(label, unit)
+    -- TODO: The label should be a global target, since we can't DELETE frames.
+    -- TODO: Text formatting is apparently what we're going to do here.
     if not label or not unit then
         return
     end
 
-    label:SetText(string.format("%s TTD: %s", unit.name, SecondsToClock(unit.timeLeft)))
+    local text = string.format("%s - %s", SecondsToClock(unit.timeLeft), unit.name)
+
+    if unit.timeActual then
+        text = text .. string.format(" (%s)", SecondsToClock(unit.timeActual))
+    end
+
+    label:SetText(text)
 end
 
 function SecondsToClock(seconds)
@@ -183,29 +201,44 @@ function TimeToDie:UpdateUnit(unit)
 
     if self.units[guid] == nil then
         self.units[guid] = { 
-            label = AceGUI:Create("Label")
+            label = AceGUI:Create("Label"),
+            timeStart = GetServerTime(),
         }
-        
+
+        self.units[guid].label:SetWidth(300)
         self.infoFrame:AddChild(self.units[guid].label)
     end
 
-    self.units[guid].name = UnitName(unit)
-    self.units[guid].level = UnitLevel(unit)
-    self.units[guid].health = UnitHealth(unit)
-    self.units[guid].health_max = UnitHealthMax(unit)
-    self.units[guid].armor = UnitArmor(unit)
-    self.units[guid].guid = UnitGUID(unit)
-    self.units[guid].time = GetServerTime()
-    self.units[guid].timeLeft = 5 * 60
+    self:UpdateUnitInstance(self.units[guid], unit)
+    self:UpdateTimeLeft(self.units[guid], self.previousUnits[#(self.previousUnits)][guid])
+end
 
-    if self.previousUnits[#(self.previousUnits)][guid] then
-        local dt = self.units[guid].time - self.previousUnits[#(self.previousUnits)][guid].time
-        local dh = self.previousUnits[#(self.previousUnits)][guid].health - self.units[guid].health
-        local pTimeLeft = self.units[guid].health * (dt/dh)
+function TimeToDie:UpdateUnitInstance(instance, unit)
+    instance.name = UnitName(unit)
+    instance.level = UnitLevel(unit)
+    instance.health = UnitHealth(unit)
+    instance.health_max = UnitHealthMax(unit)
+    instance.armor = UnitArmor(unit)
+    instance.guid = UnitGUID(unit)
+    instance.time = GetServerTime()
+    instance.timeLeft = 5 * 60
 
-        if abs(self.units[guid].timeLeft - pTimeLeft) > self.timerUpdateInterval then
-            self.units[guid].timeLeft = pTimeLeft
-        end
+    if instance.health == 0 then
+        instance.timeActual = GetServerTime() - instance.time
+    end
+end
+
+function TimeToDie:UpdateTimeLeft(unit, previousUnit)
+    if not previousUnit then
+        return 
+    end
+
+    local dt = unit.time - previousUnit.time
+    local dh = previousUnit.health - unit.health
+    local timeLeft = unit.health * (dt/dh)
+
+    if abs(unit.timeLeft - timeLeft) > self.timerUpdateInterval then
+        unit.timeLeft = timeLeft
     end
 end
 
@@ -230,6 +263,13 @@ function TimeToDie:Copy(units)
 
     return units_copy
 end
+
+function TimeToDie:PrintUnits()
+    for k, _ in pairs(self.units) do
+        self:PrintUnit(k)
+    end
+end
+
 
 function TimeToDie:PrintUnit(guid)
     if self.units[guid] == nil then
