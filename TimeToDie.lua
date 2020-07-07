@@ -24,8 +24,17 @@ local options = {
     }
 }
 
--- speed optimizations (mostly so update functions are faster)
+local initial_estimate = 5 * 60
 
+local LogLevel = 1
+local DefaultLogLevel = 1
+function TimeToDie:Log(msg, level)
+	if level > LogLevel then
+		print(msg)
+	end
+end
+
+-- speed optimizations (mostly so update functions are faster)
 function SecondsToClock(seconds)
     local seconds = tonumber(seconds)
 
