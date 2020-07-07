@@ -226,55 +226,77 @@ function TimeToDie:SetUpdateInterval(info, value)
     end
 end
 
-function TimeToDie:UpdateUnit(unit)
-    if not unit then
+function TimeToDie:UpdateUnit(UnitId)
+    if not UnitId then
         return
     end
 
     local time = GetTime()
-    local guid = UnitGUID(unit)
+    local guid = UnitGUID(UnitId)
 
     if not guid then
         return
     end
 
-    if self.units ~= {} then
-        table.insert(self.previousUnits, self:Copy(self.units))
-    end
+	if self.units[guid] == nil then
+		self.units[guid] = {
+			timeStart = GetServerTime(),
+			timeLeft = initial_estimate,
+			guid = guid,
+			level = UnitLevel(UnitId),
+			name = UnitName(UnitId),
+			damageTaken = 0 -- positive cumulative diff indicating total damage taken from start of encounter
+		}
+	end
 
-    if self.units[guid] == nil then
-        self.units[guid] = {
-            timeStart = GetServerTime()
-        }
-    end
+	self:UpdateUnitInstance(self.units[guid], UnitId)
+	
+	if self.previousUnits[guid] == nil then
+		self.previousUnits[guid] = {}
+	end	
 
-    self:UpdateUnitInstance(self.units[guid], unit)
-    self:UpdateTimeLeft(self.units[guid], self.previousUnits[#(self.previousUnits)][guid])
+	self:Log(dump(self.previousUnits[guid][#(self.previousUnits[guid])]), 1)
+	self:UpdateTimeLeft(self.units[guid], self.previousUnits[guid][#(self.previousUnits[guid])])
+	table.insert(self.previousUnits[guid], deepcopy(self.units[guid]))
+
 end
 
-function TimeToDie:UpdateUnitInstance(instance, unit)
-    instance.name = UnitName(unit)
-    instance.level = UnitLevel(unit)
-    instance.health = UnitHealth(unit)
-    instance.health_max = UnitHealthMax(unit)
-    instance.armor = UnitArmor(unit)
-    instance.guid = UnitGUID(unit)
+function TimeToDie:UpdateUnitInstance(instance, UnitId)
+    instance.health = UnitHealth(UnitId)
+    instance.health_max = UnitHealthMax(UnitId)
+    instance.armor = UnitArmor(UnitId)
     instance.time = GetServerTime()
-    instance.timeLeft = 5 * 60
 end
 
 function TimeToDie:UpdateTimeLeft(unit, previousUnit)
     if not previousUnit then
+		self:Log("no previousUnit", 1)
         return
     end
-
-    local dt = unit.time - previousUnit.time
-    local dh = previousUnit.health - unit.health
-    local timeLeft = unit.health * (dt / dh)
-
-    if abs(unit.timeLeft - timeLeft) > self.timerUpdateInterval then
+	
+	local dt = unit.time - unit.timeStart -- timeStart should be whatever the first element of the event window is
+	self:Log("delta t: "..tostring(dt), 1)
+	
+	local dh = unit.health - previousUnit.health
+	self:Log("delta h: "..tostring(dh), 1)
+	if dh < 0 then
+		unit.damageTaken = unit.damageTaken - dh	-- damageTaken is negative, so the - just keeps unit.damageTaken a positive number
+	else
+		unit.damageTaken = previousUnit.damageTaken	--we're not tracking getting healed as negative damage taken, it does not affect damage taken per second, so that the timetodie reflects the situation should heals stop.
+	end
+	
+	self:Log(unit.guid.." total damage taken: "..unit.damageTaken, 1)
+	
+	-- current health * encounter time / cumulative damage
+	local timeLeft = unit.health * (dt / unit.damageTaken)
+	
+	self:Log("Time left: "..SecondsToClock(unit.timeLeft), 1)
+	
+	-- what's this do?
+	if abs(unit.timeLeft - timeLeft) > self.timerUpdateInterval then
         unit.timeLeft = timeLeft
-    end
+    end	
+
 end
 
 function TimeToDie:Copy(units)
@@ -299,8 +321,11 @@ function TimeToDie:Copy(units)
     return units_copy
 end
 
-function TimeToDie:PrintUnits()
-    for k, _ in pairs(self.units) do
+function TimeToDie:PrintUnits(units)
+	if units == nil then
+		units = self.units
+	end
+    for k, _ in pairs(units) do
         self:PrintUnit(k)
     end
 end
