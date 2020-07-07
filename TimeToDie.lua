@@ -131,16 +131,16 @@ function TimeToDie:OnEnable()
 
 end
 
-function TimeToDie:UNIT_HEALTH(event, unitTarget)
-    self:UpdateUnit(unitTarget)
+function TimeToDie:UNIT_HEALTH(event, UnitId)
+    self:UpdateUnit(UnitId)
 end
 
 function TimeToDie:PLAYER_REGEN_DISABLED()
     -- We've entered combat, so lets clear the log.
     self:Print("Entering combat, tracking time to die.")
     self.isInCombat = true
-    self.units = { }
-    self.previousUnits = { }
+    self.units = {}
+    self.previousUnits = {}
 end
 
 function TimeToDie:PLAYER_REGEN_ENABLED()
